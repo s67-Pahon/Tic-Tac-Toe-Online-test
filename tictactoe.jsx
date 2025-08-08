@@ -9,7 +9,7 @@ function App() {
   );
 }
 
-// --- Drawing Helper Functions ---
+// --- Drawing Helper Functions (Unchanged) ---
 
 /**
  * Draws an 'X' in a specified grid cell.
@@ -56,10 +56,12 @@ function drawO(ctx, row, col, lineSpacing) {
 // The GameBoard component contains the canvas and drawing logic
 function GameBoard() {
   const canvasRef = useRef(null);
-  // State to keep track of the current turn number. Starts at 1 for Player X.
+  // State to keep track of the current turn number.
   const [turn, setTurn] = useState(1);
+  // State to keep track of the board's contents. `null` means empty.
+  const [board, setBoard] = useState(Array(9).fill(null));
 
-  // This useEffect hook draws the initial grid lines when the component first mounts.
+  // This useEffect hook draws the initial grid lines.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -91,7 +93,7 @@ function GameBoard() {
    */
   const handleCanvasClick = (event) => {
     const canvas = canvasRef.current;
-    if (!canvas || turn > 9) return; // Stop if canvas isn't ready or game is over
+    if (!canvas || turn > 9) return;
     
     const ctx = canvas.getContext('2d');
     const lineSpacing = canvas.width / 3;
@@ -100,7 +102,18 @@ function GameBoard() {
     const y = event.clientY - rect.top;
     const col = Math.floor(x / lineSpacing);
     const row = Math.floor(y / lineSpacing);
+    
+    // Calculate the index in our flat board array
+    const index = row * 3 + col;
 
+    // --- Check if the cell is already taken ---
+    if (board[index]) {
+      console.log("Cell already taken!");
+      return; // Stop the function if the cell is not empty
+    }
+
+    const currentPlayerSymbol = turn % 2 === 1 ? 'X' : 'O';
+    
     // Check if the current turn is odd or even to decide which symbol to draw
     if (turn % 2 === 1) {
       // Odd turn: Player X
@@ -110,14 +123,18 @@ function GameBoard() {
       drawO(ctx, row, col, lineSpacing);
     }
 
-    // Increment the turn counter for the next player
+    // Update the board state
+    const newBoard = [...board]; // Create a copy of the board array
+    newBoard[index] = currentPlayerSymbol; // Update the clicked cell
+    setBoard(newBoard); // Set the new board state
+
+    // Increment the turn counter
     setTurn(turn + 1);
   };
 
   return (
     <>
       <h1>Ox Game</h1>
-      {/* Display whose turn it is. Shows nothing after turn 9. */}
       <h2>
         {turn <= 9 ? `Turn ${turn}: Player ${turn % 2 === 1 ? 'X' : 'O'}` : 'Game Over'}
       </h2>

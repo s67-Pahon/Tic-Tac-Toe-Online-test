@@ -96,19 +96,23 @@ function GameBoard() {
   const [board, setBoard] = useState(Array(9).fill(null));
   const [winner, setWinner] = useState(null);
 
-  // This useEffect hook draws the initial grid lines only once.
-  useEffect(() => {
+  /**
+   * Function to draw the initial grid. Can be called to reset the board.
+   */
+  const drawGrid = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const size = canvas.width;
     const lineSpacing = size / 3;
 
+    // Clear the entire canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw the grid lines
     ctx.beginPath();
     ctx.strokeStyle = 'black';
     ctx.lineWidth = 2;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
     ctx.moveTo(lineSpacing, 0);
     ctx.lineTo(lineSpacing, size);
     ctx.moveTo(lineSpacing * 2, 0);
@@ -118,6 +122,11 @@ function GameBoard() {
     ctx.moveTo(0, lineSpacing * 2);
     ctx.lineTo(size, lineSpacing * 2);
     ctx.stroke();
+  };
+  
+  // This useEffect hook draws the initial grid lines only once.
+  useEffect(() => {
+    drawGrid();
   }, []);
 
   const handleCanvasClick = (event) => {
@@ -155,6 +164,18 @@ function GameBoard() {
     setTurn(turn + 1);
   };
   
+  /**
+   * Resets the game state to its initial values.
+   */
+  const handleReset = () => {
+    // Reset all the state variables
+    setTurn(1);
+    setBoard(Array(9).fill(null));
+    setWinner(null);
+    // Redraw the grid, which also clears the canvas
+    drawGrid();
+  };
+
   // Determine the status message
   let status;
   if (winner) {
@@ -176,6 +197,10 @@ function GameBoard() {
         style={{ border: '1px solid black' }}
         onClick={handleCanvasClick}
       ></canvas>
+      {/* Add the reset button below the canvas */}
+      <button id="reset-btn" onClick={handleReset} style={{marginTop: '10px'}}>
+        Reset
+      </button>
     </>
   );
 }

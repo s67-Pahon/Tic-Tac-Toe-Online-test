@@ -12,33 +12,55 @@ function App() {
 // --- Helper Functions ---
 
 /**
- * Checks the board state for a winner.
- * @param {Array<string|null>} board - The 9-element array representing the board.
+ * Generates all possible winning lines for a square board of a given size.
+ * @param {number} size - The side length of the square board (e.g., 3 for a 3x3 board).
+ * @returns {Array<Array<number>>} An array of winning line indices.
+ */
+const generateWinningLines = (size) => {
+  const lines = [];
+  // Rows
+  for (let i = 0; i < size; i++) {
+    const row = [];
+    for (let j = 0; j < size; j++) {
+      row.push(i * size + j);
+    }
+    lines.push(row);
+  }
+  // Columns
+  for (let i = 0; i < size; i++) {
+    const col = [];
+    for (let j = 0; j < size; j++) {
+      col.push(i + j * size);
+    }
+    lines.push(col);
+  }
+  // Diagonals
+  const diag1 = [];
+  const diag2 = [];
+  for (let i = 0; i < size; i++) {
+    diag1.push(i * (size + 1));
+    diag2.push((i + 1) * (size - 1));
+  }
+  lines.push(diag1, diag2);
+  return lines;
+};
+
+/**
+ * Checks the board state for a winner using dynamically generated lines.
+ * @param {Array<string|null>} board - The array representing the board.
  * @returns {string|null} 'X', 'O', or null if there is no winner yet.
  */
 function calculateWinner(board) {
-  const lines = [
-    // Horizontal
-    [0, 1, 2],
-    [3, 4, 5],
-    [6, 7, 8],
-    // Vertical
-    [0, 3, 6],
-    [1, 4, 7],
-    [2, 5, 8],
-    // Diagonal
-    [0, 4, 8],
-    [2, 4, 6],
-  ];
+  const BOARD_SIZE = 3;
+  const lines = generateWinningLines(BOARD_SIZE);
 
-  for (let i = 0; i < lines.length; i++) {
-    const [a, b, c] = lines[i];
-    // Check if the first cell is filled and if all three cells in the line are the same.
+  for (const line of lines) {
+    const [a, b, c] = line;
     if (board[a] && board[a] === board[b] && board[a] === board[c]) {
-      return board[a]; // Return 'X' or 'O'
+      return board[a];
     }
   }
-  return null; // No winner found
+  return null;
 }
 
 function drawX(ctx, row, col, lineSpacing) {
@@ -47,7 +69,6 @@ function drawX(ctx, row, col, lineSpacing) {
     const x = col * lineSpacing;
     const y = row * lineSpacing;
     const padding = 20;
-
     ctx.beginPath();
     ctx.moveTo(x + padding, y + padding);
     ctx.lineTo(x + lineSpacing - padding, y + lineSpacing - padding);
@@ -62,7 +83,6 @@ function drawO(ctx, row, col, lineSpacing) {
     const centerX = col * lineSpacing + lineSpacing / 2;
     const centerY = row * lineSpacing + lineSpacing / 2;
     const radius = lineSpacing / 2 - 20;
-
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
     ctx.stroke();
@@ -74,9 +94,9 @@ function GameBoard() {
   const canvasRef = useRef(null);
   const [turn, setTurn] = useState(1);
   const [board, setBoard] = useState(Array(9).fill(null));
-  const [winner, setWinner] = useState(null); // New state for the winner
+  const [winner, setWinner] = useState(null);
 
-  // This useEffect hook draws the initial grid lines.
+  // This useEffect hook draws the initial grid lines only once.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -98,14 +118,12 @@ function GameBoard() {
     ctx.moveTo(0, lineSpacing * 2);
     ctx.lineTo(size, lineSpacing * 2);
     ctx.stroke();
-
   }, []);
 
   const handleCanvasClick = (event) => {
-    const canvas = canvasRef.current;
-    // Stop if there's no canvas, if there's a winner, or if the board is full
-    if (!canvas || winner || turn > 9) return;
+    if (winner || turn > 9) return;
     
+    const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     const lineSpacing = canvas.width / 3;
     const rect = canvas.getBoundingClientRect();
@@ -115,13 +133,11 @@ function GameBoard() {
     const row = Math.floor(y / lineSpacing);
     const index = row * 3 + col;
 
-    if (board[index]) {
-      return; 
-    }
+    if (board[index]) return; 
 
     const currentPlayerSymbol = turn % 2 === 1 ? 'X' : 'O';
     
-    if (turn % 2 === 1) {
+    if (currentPlayerSymbol === 'X') {
       drawX(ctx, row, col, lineSpacing);
     } else {
       drawO(ctx, row, col, lineSpacing);
@@ -131,7 +147,6 @@ function GameBoard() {
     newBoard[index] = currentPlayerSymbol;
     setBoard(newBoard);
 
-    // Check for a winner after updating the board
     const newWinner = calculateWinner(newBoard);
     if (newWinner) {
       setWinner(newWinner);
@@ -139,7 +154,7 @@ function GameBoard() {
 
     setTurn(turn + 1);
   };
-
+  
   // Determine the status message
   let status;
   if (winner) {

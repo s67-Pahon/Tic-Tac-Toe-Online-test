@@ -10,7 +10,7 @@ function App() {
   );
 }
 
-// --- Drawing Helper Functions ---
+// --- Drawing Helper Function ---
 
 /**
  * Draws an 'X' in a specified grid cell.
@@ -36,34 +36,13 @@ function drawX(ctx, row, col, lineSpacing) {
     ctx.stroke();
 }
 
-/**
- * Draws an 'O' in a specified grid cell.
- * @param {CanvasRenderingContext2D} ctx - The 2D rendering context.
- * @param {number} row - The row of the cell (0, 1, or 2).
- * @param {number} col - The column of the cell (0, 1, or 2).
- * @param {number} lineSpacing - The size of each cell.
- */
-function drawO(ctx, row, col, lineSpacing) {
-    ctx.strokeStyle = 'black';
-    ctx.lineWidth = 5;
-
-    // Calculate the center of the cell
-    const centerX = col * lineSpacing + lineSpacing / 2;
-    const centerY = row * lineSpacing + lineSpacing / 2;
-    const radius = lineSpacing / 2 - 20; // Radius with padding
-
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-    ctx.stroke();
-}
-
 
 // The GameBoard component contains the canvas and drawing logic
 function GameBoard() {
   const canvasRef = useRef(null);
 
+  // This useEffect hook draws the initial grid lines when the component first mounts.
   useEffect(() => {
-    // --- Canvas Setup ---
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -90,15 +69,33 @@ function GameBoard() {
     ctx.lineTo(size, lineSpacing * 2);
     ctx.stroke();
 
-    // --- Draw Static Game Pieces ---
-    // Draw an 'X' in the first row, first column (0, 0)
-    drawX(ctx, 0, 0, lineSpacing);
-
-    // Draw an 'O' in the second row, second column (1, 1)
-    drawO(ctx, 1, 1, lineSpacing);
-
-
   }, []); // The empty dependency array ensures this effect runs only once.
+
+  /**
+   * Handles click events on the canvas.
+   * @param {React.MouseEvent<HTMLCanvasElement>} event - The mouse event.
+   */
+  const handleCanvasClick = (event) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const lineSpacing = canvas.width / 3;
+
+    // Get the position of the canvas on the page
+    const rect = canvas.getBoundingClientRect();
+    
+    // Calculate the x and y coordinates of the click relative to the canvas
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    // Determine which column and row was clicked
+    const col = Math.floor(x / lineSpacing);
+    const row = Math.floor(y / lineSpacing);
+
+    // Draw an 'X' in the clicked cell
+    drawX(ctx, row, col, lineSpacing);
+  };
 
   return (
     <>
@@ -108,11 +105,10 @@ function GameBoard() {
         width="300"
         height="300"
         style={{ border: '1px solid black' }}
+        onClick={handleCanvasClick}
       ></canvas>
     </>
   );
 }
 
 export default App;
-
-

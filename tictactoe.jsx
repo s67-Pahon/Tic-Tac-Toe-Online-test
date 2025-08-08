@@ -13,26 +13,23 @@ function App() {
 // --- Drawing Helper Function ---
 
 /**
- * Draws an 'X' in a specified grid cell.
+ * Draws an 'O' in a specified grid cell.
  * @param {CanvasRenderingContext2D} ctx - The 2D rendering context.
  * @param {number} row - The row of the cell (0, 1, or 2).
  * @param {number} col - The column of the cell (0, 1, or 2).
  * @param {number} lineSpacing - The size of each cell.
  */
-function drawX(ctx, row, col, lineSpacing) {
+function drawO(ctx, row, col, lineSpacing) {
     ctx.strokeStyle = 'black';
     ctx.lineWidth = 5;
-    
-    // Calculate the starting and ending points based on cell and padding
-    const x = col * lineSpacing;
-    const y = row * lineSpacing;
-    const padding = 20;
+
+    // Calculate the center of the cell
+    const centerX = col * lineSpacing + lineSpacing / 2;
+    const centerY = row * lineSpacing + lineSpacing / 2;
+    const radius = lineSpacing / 2 - 20; // Radius with padding
 
     ctx.beginPath();
-    ctx.moveTo(x + padding, y + padding);
-    ctx.lineTo(x + lineSpacing - padding, y + lineSpacing - padding);
-    ctx.moveTo(x + lineSpacing - padding, y + padding);
-    ctx.lineTo(x + padding, y + lineSpacing - padding);
+    ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
     ctx.stroke();
 }
 
@@ -93,8 +90,8 @@ function GameBoard() {
     const col = Math.floor(x / lineSpacing);
     const row = Math.floor(y / lineSpacing);
 
-    // Draw an 'X' in the clicked cell
-    drawX(ctx, row, col, lineSpacing);
+    // Draw an 'O' in the clicked cell
+    drawO(ctx, row, col, lineSpacing);
   };
 
   return (

@@ -1,7 +1,12 @@
-// Import React and some tools we need from the React library.
+// We start by importing the 'React' library and some special tools from it.
+// These tools are called "Hooks" and they let us add features like memory and
+// lifecycle events to our components.
 import React, { useRef, useEffect, useState } from 'react';
 
-// This is the main container for our app. It just shows the GameBoard.
+// #A: REACT COMPONENTS
+// In React, we build user interfaces by creating "components". Think of them
+// as custom, reusable HTML tags. This 'App' function is a component.
+// Its only job is to display our main 'GameBoard' component.
 function App() {
   return (
     <div>
@@ -11,9 +16,9 @@ function App() {
 }
 
 // --- Helper Functions ---
-// These functions do specific jobs for our main game component.
+// These are regular JavaScript functions that do specific jobs for our game.
 
-// This function knows how to draw an 'X' on the board.
+// This function knows how to draw an 'X'.
 function drawX(ctx, row, col, lineSpacing) {
     ctx.strokeStyle = 'black';
     ctx.lineWidth = 5;
@@ -28,7 +33,7 @@ function drawX(ctx, row, col, lineSpacing) {
     ctx.stroke();
 }
 
-// This function knows how to draw an 'O' on the board.
+// This function knows how to draw an 'O'.
 function drawO(ctx, row, col, lineSpacing) {
     ctx.strokeStyle = 'black';
     ctx.lineWidth = 5;
@@ -41,73 +46,92 @@ function drawO(ctx, row, col, lineSpacing) {
 }
 
 // #5: This function checks if a player has won.
+// It no longer uses a hard-coded list of winning lines.
 function calculateWinner(board) {
-  // All the possible ways to win (3 rows, 3 columns, 2 diagonals).
-  const lines = [
-    [0, 1, 2], [3, 4, 5], [6, 7, 8],
-    [0, 3, 6], [1, 4, 7], [2, 5, 8],
-    [0, 4, 8], [2, 4, 6],
-  ];
-
-  // Check each winning line.
-  for (let i = 0; i < lines.length; i++) {
-    const [a, b, c] = lines[i];
-    // If a line has three of the same symbols, we have a winner!
-    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
-      return board[a]; // Return 'X' or 'O'.
+  const size = 3;
+  // Check rows for a win
+  for (let i = 0; i < size; i++) {
+    const first = i * size;
+    if (board[first] && board[first] === board[first + 1] && board[first] === board[first + 2]) {
+      return board[first];
     }
   }
-  return null; // If no winner is found, return nothing.
+  // Check columns for a win
+  for (let i = 0; i < size; i++) {
+    if (board[i] && board[i] === board[i + size] && board[i] === board[i + 2 * size]) {
+      return board[i];
+    }
+  }
+  // Check diagonals for a win
+  if (board[0] && board[0] === board[4] && board[0] === board[8]) {
+    return board[0];
+  }
+  if (board[2] && board[2] === board[4] && board[2] === board[6]) {
+    return board[2];
+  }
+  // If no winner is found after all checks, return nothing.
+  return null;
 }
 
 
-// #1: This is the main component for our game. It holds all the logic.
+// #1: This is the main component for our game. It holds all the logic and visuals.
 function GameBoard() {
-  // We use a "ref" to get a direct link to our <canvas> element in the HTML.
+  // #B: REFS
+  // A "ref" gives us a direct link to a specific HTML element that React renders.
+  // Here, we're creating a ref to link to our <canvas> element.
   const canvasRef = useRef(null);
   
-  // #2: These are the game's "memory" variables.
-  // We use `useState` to create variables that React will remember.
-  const [turn, setTurn] = useState(1); // Remembers whose turn it is.
-  const [board, setBoard] = useState(Array(9).fill(null)); // Remembers what's in each square.
-  const [winner, setWinner] = useState(null); // Remembers if someone has won.
+  // #2 & #C: STATE
+  // "State" is the memory of our component. We use the `useState` Hook to create
+  // variables that React will remember and can change over time. When a state
+  // variable changes, React automatically re-renders the component to show the update.
+  const [turn, setTurn] = useState(1); // Remembers the current turn.
+  const [board, setBoard] = useState(Array(9).fill(null)); // Remembers the game board.
+  const [winner, setWinner] = useState(null); // Remembers the winner.
 
-  // This function draws the empty tic-tac-toe grid.
+  // This function draws the empty tic-tac-toe grid on the canvas.
   const drawGrid = () => {
+    // 1. Get our canvas element using the ref we created.
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // 2. Get the "2d context", which is the toolset for drawing shapes.
     const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height); // Erase the canvas first.
+    // 3. Erase anything that was previously on the canvas to start fresh.
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Drawing logic for the grid lines.
+    // 4. Begin drawing the lines.
     const size = canvas.width;
     const lineSpacing = size / 3;
-    ctx.beginPath();
-    ctx.strokeStyle = 'black';
-    ctx.lineWidth = 2;
+    ctx.beginPath(); // Start a new path.
+    ctx.strokeStyle = 'black'; // Set the line color.
+    ctx.lineWidth = 2; // Set the line thickness.
+    // Draw the two vertical lines.
     ctx.moveTo(lineSpacing, 0);
     ctx.lineTo(lineSpacing, size);
     ctx.moveTo(lineSpacing * 2, 0);
     ctx.lineTo(lineSpacing * 2, size);
+    // Draw the two horizontal lines.
     ctx.moveTo(0, lineSpacing);
     ctx.lineTo(size, lineSpacing);
     ctx.moveTo(0, lineSpacing * 2);
     ctx.lineTo(size, lineSpacing * 2);
+    // 5. Actually draw all the lines onto the canvas.
     ctx.stroke();
   };
   
-  // #3: This special code runs only ONCE when the game first loads.
-  // We use it to draw the initial empty grid.
+  // #3 & #D: EFFECTS
+  // The `useEffect` Hook lets us run code at specific moments in a component's life.
+  // By passing an empty array `[]` at the end, we tell React to run this code
+  // only ONCE, right after the component first appears on the screen.
+  // This is perfect for setting up our initial empty grid.
   useEffect(() => {
     drawGrid();
   }, []);
 
   // #4: This function runs every time the user clicks on the game board.
   const handleCanvasClick = (event) => {
-    // If the game is already won or over, do nothing.
     if (winner || turn > 9) return;
     
-    // Figure out the exact (row, col) of the grid where the user clicked.
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
@@ -115,12 +139,10 @@ function GameBoard() {
     const lineSpacing = canvas.width / 3;
     const col = Math.floor(x / lineSpacing);
     const row = Math.floor(y / lineSpacing);
-    const index = row * 3 + col; // Convert (row, col) to a single number (0-8).
+    const index = row * 3 + col;
 
-    // If the square is already taken, do nothing.
     if (board[index]) return; 
 
-    // Decide if we should draw an 'X' or an 'O'.
     const currentPlayerSymbol = turn % 2 === 1 ? 'X' : 'O';
     const ctx = canvas.getContext('2d');
     if (currentPlayerSymbol === 'X') {
@@ -129,32 +151,31 @@ function GameBoard() {
       drawO(ctx, row, col, lineSpacing);
     }
 
-    // Update our game's "memory" with the new move.
+    // When we update state, we create a new copy of the array.
+    // This is important for telling React that something has changed.
     const newBoard = [...board];
     newBoard[index] = currentPlayerSymbol;
-    setBoard(newBoard);
+    setBoard(newBoard); // Update the board state, causing a re-render.
 
-    // After the move, check if it caused a win.
     const newWinner = calculateWinner(newBoard);
     if (newWinner) {
-      setWinner(newWinner); // Remember the winner.
+      setWinner(newWinner); // Update the winner state.
     }
 
-    // Go to the next turn.
-    setTurn(turn + 1);
+    setTurn(turn + 1); // Update the turn state.
   };
   
   // #6: This function runs when the user clicks the "Reset" button.
   const handleReset = () => {
-    // Set all our "memory" variables back to how they were at the start.
+    // We reset all the state variables back to their original values.
     setTurn(1);
     setBoard(Array(9).fill(null));
     setWinner(null);
-    // Erase the board and draw a fresh grid.
+    // We also manually redraw the grid to clear the old X's and O's.
     drawGrid();
   };
 
-  // Figure out what message to show the user.
+  // Figure out what message to show the user based on the current state.
   let status;
   if (winner) {
     status = `Winner: Player ${winner}`;
@@ -164,17 +185,21 @@ function GameBoard() {
     status = `Turn ${turn}: Player ${turn % 2 === 1 ? 'X' : 'O'}`;
   }
 
-  // #7: This is the HTML that our component shows on the screen.
+  // #7 & #E: JSX
+  // This looks like HTML, but it's actually "JSX". It's a syntax that lets us
+  // write HTML-like code in our JavaScript. React turns this into real HTML
+  // that the browser can understand. We can embed JavaScript variables right
+  // inside it using curly braces {}.
   return (
     <>
       <h1>Ox Game</h1>
       <h2>{status}</h2>
       <canvas
-        ref={canvasRef} // Link this to our canvasRef.
+        ref={canvasRef}
         width="300"
         height="300"
         style={{ border: '1px solid black' }}
-        onClick={handleCanvasClick} // Run our click function when the canvas is clicked.
+        onClick={handleCanvasClick}
       ></canvas>
       <button id="reset-btn" onClick={handleReset} style={{marginTop: '10px'}}>
         Reset
@@ -183,5 +208,5 @@ function GameBoard() {
   );
 }
 
-// Make our App component available to be used by the rest of the application.
+// We "export" our main App component so it can be used by other parts of the project.
 export default App;

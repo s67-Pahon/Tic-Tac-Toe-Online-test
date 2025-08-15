@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 
 function App() {
   return (
-    <div>
+    <div style={{ textAlign: 'center' }}>
       <GameBoard />
     </div>
   );
@@ -13,7 +13,8 @@ function drawX(ctx, row, col, lineSpacing) {
   ctx.lineWidth = 5;
   const x = col * lineSpacing;
   const y = row * lineSpacing;
-  const padding = 20;
+  // Padding is now proportional to the cell size
+  const padding = lineSpacing / 5;
   ctx.beginPath();
   ctx.moveTo(x + padding, y + padding);
   ctx.lineTo(x + lineSpacing - padding, y + lineSpacing - padding);
@@ -27,7 +28,9 @@ function drawO(ctx, row, col, lineSpacing) {
   ctx.lineWidth = 5;
   const centerX = col * lineSpacing + lineSpacing / 2;
   const centerY = row * lineSpacing + lineSpacing / 2;
-  const radius = lineSpacing / 2 - 20;
+  // The radius is now calculated based on proportional padding
+  const padding = lineSpacing / 5;
+  const radius = lineSpacing / 2 - padding;
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
   ctx.stroke();
@@ -90,8 +93,10 @@ function calculateWinner(board, gridSize) {
 
 function GameBoard() {
   const canvasRef = useRef(null);
-  const [gridSize, setGridSize] = useState(3);
-  const [canvasSize, setCanvasSize] = useState(300);
+  // Grid size is now a fixed value.
+  const [gridSize] = useState(3); 
+  // Canvas size is derived from the fixed grid size.
+  const [canvasSize] = useState(gridSize * 100); 
 
   const [turn, setTurn] = useState(1);
   const [board, setBoard] = useState(
@@ -111,19 +116,18 @@ function GameBoard() {
     ctx.lineWidth = 2;
 
     for (let i = 1; i < gridSize; i++) {
-      // Vertical lines
       ctx.moveTo(lineSpacing * i, 0);
       ctx.lineTo(lineSpacing * i, canvas.height);
-      // Horizontal lines
       ctx.moveTo(0, lineSpacing * i);
       ctx.lineTo(canvas.width, lineSpacing * i);
     }
     ctx.stroke();
   };
 
+  // This effect redraws the grid when the board state changes (e.g., on reset).
   useEffect(() => {
     drawGrid();
-  }, [gridSize, canvasSize]);
+  }, [board]); 
 
   const handleCanvasClick = (event) => {
     if (winner || turn > gridSize * gridSize) return;
@@ -162,7 +166,6 @@ function GameBoard() {
     setTurn(1);
     setBoard(Array.from({ length: gridSize }, () => Array(gridSize).fill(null)));
     setWinner(null);
-    drawGrid();
   };
 
   let status;
@@ -185,9 +188,11 @@ function GameBoard() {
         style={{ border: '1px solid black' }}
         onClick={handleCanvasClick}
       ></canvas>
-      <button id="reset-btn" onClick={handleReset} style={{ marginTop: '10px' }}>
-        Reset
-      </button>
+      <div>
+        <button id="reset-btn" onClick={handleReset} style={{ marginTop: '10px' }}>
+          Reset
+        </button>
+      </div>
     </>
   );
 }

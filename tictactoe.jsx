@@ -104,17 +104,19 @@ function GameBoard() {
   );
   const [winner, setWinner] = useState(null);
 
-  const drawGrid = () => {
+  // This effect is now the single source of truth for drawing.
+  // It runs whenever the board state changes.
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
+    
+    // 1. Clear the canvas and draw the grid lines
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
     const lineSpacing = canvas.width / gridSize;
     ctx.beginPath();
     ctx.strokeStyle = 'black';
     ctx.lineWidth = 2;
-
     for (let i = 1; i < gridSize; i++) {
       ctx.moveTo(lineSpacing * i, 0);
       ctx.lineTo(lineSpacing * i, canvas.height);
@@ -122,12 +124,18 @@ function GameBoard() {
       ctx.lineTo(canvas.width, lineSpacing * i);
     }
     ctx.stroke();
-  };
 
-  // This effect redraws the grid when the board state changes (e.g., on reset).
-  useEffect(() => {
-    drawGrid();
-  }, [board]); 
+    // 2. Loop through the board state and draw all the symbols
+    board.forEach((row, rowIndex) => {
+      row.forEach((cell, colIndex) => {
+        if (cell === 'X') {
+          drawX(ctx, rowIndex, colIndex, lineSpacing);
+        } else if (cell === 'O') {
+          drawO(ctx, rowIndex, colIndex, lineSpacing);
+        }
+      });
+    });
+  }, [board, gridSize]); // Rerun this effect whenever the board changes
 
   const handleCanvasClick = (event) => {
     if (winner || turn > gridSize * gridSize) return;
@@ -142,14 +150,9 @@ function GameBoard() {
 
     if (board[row][col]) return;
 
+    // We no longer draw directly here. We only update the state.
+    // The useEffect hook will handle all the drawing.
     const currentPlayerSymbol = turn % 2 === 1 ? 'X' : 'O';
-    const ctx = canvas.getContext('2d');
-    if (currentPlayerSymbol === 'X') {
-      drawX(ctx, row, col, lineSpacing);
-    } else {
-      drawO(ctx, row, col, lineSpacing);
-    }
-
     const newBoard = board.map(arr => [...arr]);
     newBoard[row][col] = currentPlayerSymbol;
     setBoard(newBoard);

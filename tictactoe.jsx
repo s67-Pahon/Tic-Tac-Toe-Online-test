@@ -47,28 +47,72 @@ function drawO(ctx, row, col, lineSpacing) {
 
 // #5: This function checks if a player has won.
 // It no longer uses a hard-coded list of winning lines.
-function calculateWinner(board) {
-  const size = 3;
+// #5: This function checks if a player has won.
+// It now takes the grid size as an argument.
+function calculateWinner(board, gridSize) {
+  const size = gridSize; // Use the passed-in gridSize
   // Check rows for a win
   for (let i = 0; i < size; i++) {
-    const first = i * size;
-    if (board[first] && board[first] === board[first + 1] && board[first] === board[first + 2]) {
-      return board[first];
+    // Check if the first cell of the row is not empty
+    if (board[i * size]) {
+      let isWin = true;
+      for (let j = 1; j < size; j++) {
+        if (board[i * size] !== board[i * size + j]) {
+          isWin = false;
+          break;
+        }
+      }
+      if (isWin) {
+        return board[i * size];
+      }
     }
   }
+
   // Check columns for a win
   for (let i = 0; i < size; i++) {
-    if (board[i] && board[i] === board[i + size] && board[i] === board[i + 2 * size]) {
-      return board[i];
+    // Check if the first cell of the column is not empty
+    if (board[i]) {
+      let isWin = true;
+      for (let j = 1; j < size; j++) {
+        if (board[i] !== board[i + j * size]) {
+          isWin = false;
+          break;
+        }
+      }
+      if (isWin) {
+        return board[i];
+      }
     }
   }
-  // Check diagonals for a win
-  if (board[0] && board[0] === board[4] && board[0] === board[8]) {
-    return board[0];
+
+  // Check diagonals for a win (top-left to bottom-right)
+  if (board[0]) {
+    let isWin = true;
+    for (let i = 1; i < size; i++) {
+      if (board[0] !== board[i * size + i]) {
+        isWin = false;
+        break;
+      }
+    }
+    if (isWin) {
+      return board[0];
+    }
   }
-  if (board[2] && board[2] === board[4] && board[2] === board[6]) {
-    return board[2];
+
+  // Check diagonals for a win (top-right to bottom-left)
+  if (board[size - 1]) {
+    let isWin = true;
+    for (let i = 1; i < size; i++) {
+      if (board[size - 1] !== board[i * (size - 1) + (size - 1)]) {
+        isWin = false;
+        break;
+      }
+    }
+    if (isWin) {
+      return board[size - 1];
+    }
   }
+
   // If no winner is found after all checks, return nothing.
   return null;
 }
@@ -81,7 +125,7 @@ function GameBoard() {
   // Here, we're creating a ref to link to our <canvas> element.
   const canvasRef = useRef(null);
   const [canvasSize , setCanvasSize] = useState(300);
-  
+  const canvasGrid = canvasSize/100;
   // #2 & #C: STATE
   // "State" is the memory of our component. We use the `useState` Hook to create
   // variables that React will remember and can change over time. When a state
@@ -158,7 +202,7 @@ function GameBoard() {
     newBoard[index] = currentPlayerSymbol;
     setBoard(newBoard); // Update the board state, causing a re-render.
 
-    const newWinner = calculateWinner(newBoard);
+    const newWinner = calculateWinner(newBoard ,canvasGrid);
     if (newWinner) {
       setWinner(newWinner); // Update the winner state.
     }

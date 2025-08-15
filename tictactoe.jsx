@@ -13,7 +13,6 @@ function drawX(ctx, row, col, lineSpacing) {
   ctx.lineWidth = 5;
   const x = col * lineSpacing;
   const y = row * lineSpacing;
-  // Padding is now proportional to the cell size
   const padding = lineSpacing / 5;
   ctx.beginPath();
   ctx.moveTo(x + padding, y + padding);
@@ -28,7 +27,6 @@ function drawO(ctx, row, col, lineSpacing) {
   ctx.lineWidth = 5;
   const centerX = col * lineSpacing + lineSpacing / 2;
   const centerY = row * lineSpacing + lineSpacing / 2;
-  // The radius is now calculated based on proportional padding
   const padding = lineSpacing / 5;
   const radius = lineSpacing / 2 - padding;
   ctx.beginPath();
@@ -93,10 +91,10 @@ function calculateWinner(board, gridSize) {
 
 function GameBoard() {
   const canvasRef = useRef(null);
-  // Grid size is now a fixed value.
-  const [gridSize] = useState(3); 
-  // Canvas size is derived from the fixed grid size.
-  const [canvasSize] = useState(gridSize * 100); 
+  // gridSize is now a state variable, starting at 3.
+  const [gridSize, setGridSize] = useState(3);
+  // canvasSize is also state, so it can be updated.
+  const [canvasSize, setCanvasSize] = useState(gridSize * 100);
 
   const [turn, setTurn] = useState(1);
   const [board, setBoard] = useState(
@@ -104,14 +102,22 @@ function GameBoard() {
   );
   const [winner, setWinner] = useState(null);
 
-  // This effect is now the single source of truth for drawing.
+  // This new effect runs ONLY when gridSize changes.
+  // It resets the entire game to match the new size.
+  useEffect(() => {
+    setCanvasSize(gridSize * 100);
+    setTurn(1);
+    setBoard(Array.from({ length: gridSize }, () => Array(gridSize).fill(null)));
+    setWinner(null);
+  }, [gridSize]);
+
+  // This effect handles all the drawing, as before.
   // It runs whenever the board state changes.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     
-    // 1. Clear the canvas and draw the grid lines
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const lineSpacing = canvas.width / gridSize;
     ctx.beginPath();
@@ -125,7 +131,6 @@ function GameBoard() {
     }
     ctx.stroke();
 
-    // 2. Loop through the board state and draw all the symbols
     board.forEach((row, rowIndex) => {
       row.forEach((cell, colIndex) => {
         if (cell === 'X') {
@@ -135,7 +140,7 @@ function GameBoard() {
         }
       });
     });
-  }, [board, gridSize]); // Rerun this effect whenever the board changes
+  }, [board, gridSize]); 
 
   const handleCanvasClick = (event) => {
     if (winner || turn > gridSize * gridSize) return;
@@ -150,8 +155,6 @@ function GameBoard() {
 
     if (board[row][col]) return;
 
-    // We no longer draw directly here. We only update the state.
-    // The useEffect hook will handle all the drawing.
     const currentPlayerSymbol = turn % 2 === 1 ? 'X' : 'O';
     const newBoard = board.map(arr => [...arr]);
     newBoard[row][col] = currentPlayerSymbol;
@@ -183,6 +186,11 @@ function GameBoard() {
   return (
     <>
       <h1>Tic Tac Toe</h1>
+      <div style={{ margin: '10px 0' }}>
+        <button onClick={() => setGridSize(3)} style={{ marginRight: '5px' }}>3x3</button>
+        <button onClick={() => setGridSize(4)} style={{ marginRight: '5px' }}>4x4</button>
+        <button onClick={() => setGridSize(5)}>5x5</button>
+      </div>
       <h2>{status}</h2>
       <canvas
         ref={canvasRef}

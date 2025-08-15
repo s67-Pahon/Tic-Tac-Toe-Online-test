@@ -80,6 +80,7 @@ function GameBoard() {
   // A "ref" gives us a direct link to a specific HTML element that React renders.
   // Here, we're creating a ref to link to our <canvas> element.
   const canvasRef = useRef(null);
+  const [canvasSize , setCanvasSize] = useState(300);
   
   // #2 & #C: STATE
   // "State" is the memory of our component. We use the `useState` Hook to create
@@ -100,7 +101,7 @@ function GameBoard() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // 4. Begin drawing the lines.
-    const size = canvas.width;
+    const size = canvasSize;
     const lineSpacing = size / 3;
     ctx.beginPath(); // Start a new path.
     ctx.strokeStyle = 'black'; // Set the line color.
@@ -192,12 +193,12 @@ function GameBoard() {
   // inside it using curly braces {}.
   return (
     <>
-      <h1>Ox Game</h1>
+      <h1>Tic Tac Toe</h1>
       <h2>{status}</h2>
       <canvas
         ref={canvasRef}
-        width="300"
-        height="300"
+        width={canvasSize}
+        height={canvasSize}
         style={{ border: '1px solid black' }}
         onClick={handleCanvasClick}
       ></canvas>

@@ -5,7 +5,14 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot } from 'fireba
 
 // --- Global Variables Provided by the Environment ---
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { 
+    apiKey: "AIzaSyA-ezETUvJsjdcceG-3WpQK2NuXZQLGFmw",
+    authDomain: "tic-tac-toe-online-955d0.firebaseapp.com",
+    projectId: "tic-tac-toe-online-955d0",
+    storageBucket: "tic-tac-toe-online-955d0.firebasestorage.app",
+    messagingSenderId: "61466632785",
+    appId: "1:61466632785:web:e90047573f2c3bbf328e70",
+    measurementId: "G-8WECGZY7RW"};
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
 // --- Helper Functions (from original code) ---

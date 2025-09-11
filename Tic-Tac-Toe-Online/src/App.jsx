@@ -5,8 +5,7 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot } from 'fireba
 
 // --- Global Variables Provided by the Environment ---
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { 
-    apiKey: "AIzaSyA-ezETUvJsjdcceG-3WpQK2NuXZQLGFmw",
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {apiKey: "AIzaSyA-ezETUvJsjdcceG-3WpQK2NuXZQLGFmw",
   authDomain: "tic-tac-toe-online-955d0.firebaseapp.com",
   projectId: "tic-tac-toe-online-955d0",
   storageBucket: "tic-tac-toe-online-955d0.firebasestorage.app",
@@ -63,11 +62,14 @@ const checkWinner = (board, size) => {
     return null;
 };
 
-const getStatusMessage = (winner, isMyTurn, isGameOver) => {
+const getStatusMessage = (winner, isMyTurn, isGameOver, isHost) => {
+    const myMark = isHost ? 'X' : 'O';
+    const opponentMark = isHost ? 'O' : 'X';
+
     if (isGameOver) {
-        return winner ? `${winner === 'X' ? 'You' : 'Opponent'} Win!` : 'Game Draw!';
+        return winner ? `${winner === myMark ? 'You' : 'Opponent'} Win!` : 'Game Draw!';
     }
-    return isMyTurn ? 'Your turn (X)' : 'Opponent\'s turn (O)';
+    return isMyTurn ? `Your turn (${myMark})` : `Opponent's turn (${opponentMark})`;
 };
 
 // --- App Component ---
@@ -92,6 +94,12 @@ export default function App() {
 
     useEffect(() => {
         const initializeFirebase = async () => {
+            // FIX: Add check to prevent initialization if config is missing
+            if (Object.keys(firebaseConfig).length === 0) {
+                setError('Waiting for Firebase configuration to be provided...');
+                return;
+            }
+
             try {
                 const app = initializeApp(firebaseConfig);
                 const firestore = getFirestore(app);
@@ -99,12 +107,10 @@ export default function App() {
                 setDb(firestore);
                 setAuth(authInstance);
 
-                // Use onAuthStateChanged to handle both token and anonymous sign-in
                 const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
                     if (user) {
                         setUserId(user.uid);
                     } else {
-                        // Fallback to anonymous sign-in if custom token is not provided
                         try {
                             const anonymousUserCredential = await signInAnonymously(authInstance);
                             setUserId(anonymousUserCredential.user.uid);
@@ -115,13 +121,11 @@ export default function App() {
                     }
                 });
 
-                // Sign in with the provided custom token if available
                 if (initialAuthToken) {
                     try {
                         await signInWithCustomToken(authInstance, initialAuthToken);
                     } catch (error) {
                         console.error('Custom token sign-in failed:', error);
-                        // The onAuthStateChanged listener will handle anonymous sign-in if this fails
                     }
                 }
 
@@ -142,7 +146,6 @@ export default function App() {
 
         const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
 
-        // Listen for real-time updates to the game document
         const unsubscribe = onSnapshot(gameRef, (doc) => {
             if (doc.exists()) {
                 const data = doc.data();
@@ -250,7 +253,6 @@ export default function App() {
                     setGameData(data);
                     setIsHost(false);
                 } else if (!data.playerO) {
-                    // Joining as Player O
                     await updateDoc(gameRef, {
                         playerO: userId,
                     });
@@ -260,7 +262,6 @@ export default function App() {
                     setError('Game is already full. Please choose another ID.');
                 }
             } else {
-                // Creating a new game
                 await setDoc(gameRef, {
                     board: Array(boardSize * boardSize).fill(null),
                     xIsNext: true,
@@ -280,11 +281,17 @@ export default function App() {
     };
 
     const handleCanvasClick = async (event) => {
-        const canvas = canvasRef.current;
-        if (!canvas || !gameData || gameStatus.winner || !isMyTurn) {
+        if (!gameData || !gameData.playerX || !gameData.playerO) {
+            console.error('Cannot make a move until both players have joined.');
+            setError('Waiting for opponent to join...');
             return;
         }
 
+        if (!canvasRef.current || gameStatus.winner || !isMyTurn) {
+            return;
+        }
+
+        const canvas = canvasRef.current;
         const rect = canvas.getBoundingClientRect();
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
@@ -395,7 +402,7 @@ export default function App() {
                             <button onClick={() => handleGameReset(5)} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition">5x5</button>
                         </div>
 
-                        <h2 className="text-2xl font-semibold text-indigo-600 my-4 h-8">{getStatusMessage(gameStatus.winner, isMyTurn, gameStatus.winner !== null || gameStatus.board.every(Boolean))}</h2>
+                        <h2 className="text-2xl font-semibold text-indigo-600 my-4 h-8">{getStatusMessage(gameStatus.winner, isMyTurn, gameStatus.winner !== null || gameStatus.board.every(Boolean), isHost)}</h2>
 
                         <div className="relative">
                             <canvas

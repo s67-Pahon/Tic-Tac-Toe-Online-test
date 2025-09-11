@@ -98,25 +98,34 @@ export default function App() {
     // --- Firebase Initialization and Authentication Effect ---
     useEffect(() => {
         try {
+            if (Object.keys(firebaseConfig).length === 0) {
+                setError("Firebase configuration is missing. Please ensure the app is configured correctly.");
+                setIsAuthReady(true);
+                return;
+            }
+
             const firebaseApp = initializeApp(firebaseConfig);
             const authInstance = getAuth(firebaseApp);
             const dbInstance = getFirestore(firebaseApp);
             setAuth(authInstance);
             setDb(dbInstance);
 
-            const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
+            const unsubscribe = onAuthStateChanged(authInstance, (user) => {
                 if (user) {
                     setUserId(user.uid);
+                    console.log("User signed in with UID:", user.uid);
                 } else {
-                    try {
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(authInstance, initialAuthToken);
-                        } else {
-                            await signInAnonymously(authInstance);
-                        }
-                    } catch (err) {
-                        console.error("Authentication failed:", err);
-                        setError("Could not connect to the game service.");
+                    console.log("No user signed in. Attempting anonymous or custom token sign-in.");
+                    if (initialAuthToken) {
+                        signInWithCustomToken(authInstance, initialAuthToken).catch(err => {
+                            console.error("Custom token authentication failed:", err);
+                            setError("Could not connect to the game service with custom token.");
+                        });
+                    } else {
+                        signInAnonymously(authInstance).catch(err => {
+                            console.error("Anonymous authentication failed:", err);
+                            setError("Could not connect to the game service anonymously.");
+                        });
                     }
                 }
                 setIsAuthReady(true);
@@ -125,8 +134,9 @@ export default function App() {
         } catch (err) {
             console.error("Firebase initialization failed:", err);
             setError("Could not initialize the game service.");
+            setIsAuthReady(true); // Ensure auth state is set even on failure
         }
-    }, []);
+    }, [initialAuthToken]);
 
     // --- Firestore Game State Sync Effect ---
     useEffect(() => {

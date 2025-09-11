@@ -7,12 +7,12 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot } from 'fireba
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { 
     apiKey: "AIzaSyA-ezETUvJsjdcceG-3WpQK2NuXZQLGFmw",
-    authDomain: "tic-tac-toe-online-955d0.firebaseapp.com",
-    projectId: "tic-tac-toe-online-955d0",
-    storageBucket: "tic-tac-toe-online-955d0.firebasestorage.app",
-    messagingSenderId: "61466632785",
-    appId: "1:61466632785:web:e90047573f2c3bbf328e70",
-    measurementId: "G-8WECGZY7RW"};
+  authDomain: "tic-tac-toe-online-955d0.firebaseapp.com",
+  projectId: "tic-tac-toe-online-955d0",
+  storageBucket: "tic-tac-toe-online-955d0.firebasestorage.app",
+  messagingSenderId: "61466632785",
+  appId: "1:61466632785:web:e90047573f2c3bbf328e70",
+  measurementId: "G-8WECGZY7RW"};
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
 // --- Helper Functions (from original code) ---
@@ -33,340 +33,383 @@ function drawX(ctx, row, col, lineSpacing) {
 function drawO(ctx, row, col, lineSpacing) {
     ctx.strokeStyle = '#e74c3c';
     ctx.lineWidth = 8;
-    const centerX = col * lineSpacing + lineSpacing / 2;
-    const centerY = row * lineSpacing + lineSpacing / 2;
-    const padding = lineSpacing / 5;
-    const radius = lineSpacing / 2 - padding;
     ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+    const x = col * lineSpacing + lineSpacing / 2;
+    const y = row * lineSpacing + lineSpacing / 2;
+    ctx.arc(x, y, lineSpacing / 2.5, 0, 2 * Math.PI);
     ctx.stroke();
 }
 
-function calculateWinner(board, gridSize) {
-    if (!board) return null;
+const checkWinner = (board, size) => {
+    const lines = [];
 
-    // Check rows
-    for (let i = 0; i < gridSize; i++) {
-        const row = board[i];
-        if (row && row[0] && row.every(cell => cell === row[0])) {
-            return row[0];
+    // Rows and columns
+    for (let i = 0; i < size; i++) {
+        lines.push(board.slice(i * size, i * size + size)); // rows
+        lines.push(board.filter((_, idx) => idx % size === i)); // columns
+    }
+
+    // Diagonals
+    lines.push(board.filter((_, idx) => idx % (size + 1) === 0));
+    lines.push(board.filter((_, idx) => idx > 0 && idx < (size * size) - 1 && idx % (size - 1) === 0));
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.every(val => val && val === line[0])) {
+            return line[0];
         }
-    }
-
-    // Check columns
-    for (let i = 0; i < gridSize; i++) {
-        const col = board.map(row => row[i]);
-        if (col[0] && col.every(cell => cell === col[0])) {
-            return col[0];
-        }
-    }
-
-    // Check diagonal (top-left to bottom-right)
-    const diag1 = board.map((row, i) => row[i]);
-    if (diag1[0] && diag1.every(cell => cell === diag1[0])) {
-        return diag1[0];
-    }
-
-    // Check diagonal (top-right to bottom-left)
-    const diag2 = board.map((row, i) => row[gridSize - 1 - i]);
-    if (diag2[0] && diag2.every(cell => cell === diag2[0])) {
-        return diag2[0];
     }
 
     return null;
-}
+};
 
-// --- Main App Component ---
+const getStatusMessage = (winner, isMyTurn, isGameOver) => {
+    if (isGameOver) {
+        return winner ? `${winner === 'X' ? 'You' : 'Opponent'} Win!` : 'Game Draw!';
+    }
+    return isMyTurn ? 'Your turn (X)' : 'Opponent\'s turn (O)';
+};
+
+// --- App Component ---
 export default function App() {
-    // State to manage game-related data
     const canvasRef = useRef(null);
-    const [userId, setUserId] = useState(null);
-    const [isAuthReady, setIsAuthReady] = useState(false);
-    const [error, setError] = useState('');
-    const [notification, setNotification] = useState('');
-
-    // Game Lobby State
-    const [gameId, setGameId] = useState('');
-    const [gameIdInput, setGameIdInput] = useState('');
-
-    // Game State (synced from Firestore)
-    const [gameState, setGameState] = useState(null);
-    const { board, gridSize, turn, winner, playerX, playerO, isDraw } = gameState || {};
-
-    // Firestore and Auth instances
     const [db, setDb] = useState(null);
     const [auth, setAuth] = useState(null);
+    const [userId, setUserId] = useState(null);
+    const [gameId, setGameId] = useState('');
+    const [isHost, setIsHost] = useState(false);
+    const [gameData, setGameData] = useState(null);
+    const [boardSize, setBoardSize] = useState(3);
+    const [gameStatus, setGameStatus] = useState({
+        board: Array(9).fill(null),
+        xIsNext: true,
+        winner: null,
+    });
+    const [error, setError] = useState(null);
+    const [notification, setNotification] = useState(null);
+    const isMyTurn = (gameData?.currentPlayer === userId);
+    const canvasSize = 400;
 
-    // Derived state for the current player
-    const playerSymbol = userId === playerX ? 'X' : (userId === playerO ? 'O' : null);
-    const isMyTurn = gameState && !winner && !isDraw && ((turn % 2 === 1 && playerSymbol === 'X') || (turn % 2 === 0 && playerSymbol === 'O'));
-    const canvasSize = gridSize ? gridSize * 100 : 300;
-
-    // --- Firebase Initialization and Authentication Effect ---
     useEffect(() => {
-        try {
-            if (Object.keys(firebaseConfig).length === 0) {
-                setError("Firebase configuration is missing. Please ensure the app is configured correctly.");
-                setIsAuthReady(true);
-                return;
-            }
+        const initializeFirebase = async () => {
+            try {
+                const app = initializeApp(firebaseConfig);
+                const firestore = getFirestore(app);
+                const authInstance = getAuth(app);
+                setDb(firestore);
+                setAuth(authInstance);
 
-            const firebaseApp = initializeApp(firebaseConfig);
-            const authInstance = getAuth(firebaseApp);
-            const dbInstance = getFirestore(firebaseApp);
-            setAuth(authInstance);
-            setDb(dbInstance);
-
-            const unsubscribe = onAuthStateChanged(authInstance, (user) => {
-                if (user) {
-                    setUserId(user.uid);
-                    console.log("User signed in with UID:", user.uid);
-                } else {
-                    console.log("No user signed in. Attempting anonymous or custom token sign-in.");
-                    if (initialAuthToken) {
-                        signInWithCustomToken(authInstance, initialAuthToken).catch(err => {
-                            console.error("Custom token authentication failed:", err);
-                            setError("Could not connect to the game service with custom token.");
-                        });
+                // Use onAuthStateChanged to handle both token and anonymous sign-in
+                const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
+                    if (user) {
+                        setUserId(user.uid);
                     } else {
-                        signInAnonymously(authInstance).catch(err => {
-                            console.error("Anonymous authentication failed:", err);
-                            setError("Could not connect to the game service anonymously.");
-                        });
+                        // Fallback to anonymous sign-in if custom token is not provided
+                        try {
+                            const anonymousUserCredential = await signInAnonymously(authInstance);
+                            setUserId(anonymousUserCredential.user.uid);
+                        } catch (error) {
+                            console.error('Anonymous sign-in failed:', error);
+                            setError('Could not connect to the game service anonymously.');
+                        }
+                    }
+                });
+
+                // Sign in with the provided custom token if available
+                if (initialAuthToken) {
+                    try {
+                        await signInWithCustomToken(authInstance, initialAuthToken);
+                    } catch (error) {
+                        console.error('Custom token sign-in failed:', error);
+                        // The onAuthStateChanged listener will handle anonymous sign-in if this fails
                     }
                 }
-                setIsAuthReady(true);
-            });
-            return () => unsubscribe();
-        } catch (err) {
-            console.error("Firebase initialization failed:", err);
-            setError("Could not initialize the game service.");
-            setIsAuthReady(true); // Ensure auth state is set even on failure
-        }
-    }, [initialAuthToken]);
 
-    // --- Firestore Game State Sync Effect ---
-    useEffect(() => {
-        if (!gameId || !isAuthReady || !db) return;
-
-        const gameDocRef = doc(db, `/artifacts/${appId}/public/data/tictactoe/${gameId}`);
-        const unsubscribe = onSnapshot(gameDocRef, (docSnap) => {
-            if (docSnap.exists()) {
-                setGameState(docSnap.data());
-            } else {
-                setError("Game not found. It might have been deleted.");
-                setGameId('');
-                setGameState(null);
+                return () => unsubscribe();
+            } catch (err) {
+                console.error('Firebase initialization failed:', err);
+                setError('Could not initialize Firebase.');
             }
-        }, (err) => {
-            console.error("Firestore snapshot error:", err);
-            setError("Lost connection to the game.");
-        });
+        };
 
-        return () => unsubscribe(); // Cleanup listener on unmount or gameId change
-    }, [gameId, isAuthReady, db]);
+        initializeFirebase();
+    }, []);
 
-    // --- Canvas Drawing Effect ---
     useEffect(() => {
-        if (!gameState) return;
-
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        const lineSpacing = canvas.width / gridSize;
-
-        // Clear and draw grid
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.beginPath();
-        ctx.strokeStyle = '#bdc3c7';
-        ctx.lineWidth = 2;
-        for (let i = 1; i < gridSize; i++) {
-            ctx.moveTo(lineSpacing * i, 0);
-            ctx.lineTo(lineSpacing * i, canvas.height);
-            ctx.moveTo(0, lineSpacing * i);
-            ctx.lineTo(canvas.width, lineSpacing * i);
-        }
-        ctx.stroke();
-
-        // Draw X's and O's
-        board.forEach((row, rowIndex) => {
-            row.forEach((cell, colIndex) => {
-                if (cell === 'X') {
-                    drawX(ctx, rowIndex, colIndex, lineSpacing);
-                } else if (cell === 'O') {
-                    drawO(ctx, rowIndex, colIndex, lineSpacing);
-                }
-            });
-        });
-    }, [gameState, gridSize]);
-
-    // --- Game Actions ---
-    const handleCreateOrJoinGame = async () => {
-        if (!gameIdInput.trim() || !userId || !db) {
-            setError("Please enter a Game ID.");
+        if (!db || !gameId || !userId) {
             return;
         }
-        setError('');
-        setNotification('');
-        const newGameId = gameIdInput.trim();
-        const gameDocRef = doc(db, `/artifacts/${appId}/public/data/tictactoe/${newGameId}`);
 
-        try {
-            const docSnap = await getDoc(gameDocRef);
+        const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
 
-            if (docSnap.exists()) {
-                // Game exists, try to join
-                const gameData = docSnap.data();
-                if (gameData.playerO && gameData.playerO !== userId && gameData.playerX !== userId) {
-                    setError("This game is already full.");
-                    return;
-                }
-                if (!gameData.playerO && gameData.playerX !== userId) {
-                    await updateDoc(gameDocRef, { playerO: userId });
-                    setNotification("Joined game as Player O!");
+        // Listen for real-time updates to the game document
+        const unsubscribe = onSnapshot(gameRef, (doc) => {
+            if (doc.exists()) {
+                const data = doc.data();
+                setGameData(data);
+                if (data.board) {
+                    setGameStatus({
+                        board: data.board,
+                        xIsNext: data.xIsNext,
+                        winner: checkWinner(data.board, data.boardSize),
+                    });
+                    setBoardSize(data.boardSize);
                 }
             } else {
-                // Game doesn't exist, create it
-                const initialBoard = Array.from({ length: 3 }, () => Array(3).fill(null));
-                await setDoc(gameDocRef, {
-                    board: initialBoard,
-                    gridSize: 3,
-                    turn: 1,
+                setGameData(null);
+                setGameStatus({
+                    board: Array(boardSize * boardSize).fill(null),
+                    xIsNext: true,
                     winner: null,
-                    isDraw: false,
+                });
+                setNotification('Game not found.');
+            }
+        }, (err) => {
+            console.error('Error fetching game data:', err);
+            setError('Failed to load game data.');
+        });
+
+        return () => unsubscribe();
+    }, [db, gameId, userId, appId]);
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const lineSpacing = canvasSize / boardSize;
+
+        const drawBoard = () => {
+            ctx.clearRect(0, 0, canvasSize, canvasSize);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.fillRect(0, 0, canvasSize, canvasSize);
+
+            ctx.strokeStyle = '#34495e';
+            ctx.lineWidth = 2;
+
+            for (let i = 1; i < boardSize; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * lineSpacing, 0);
+                ctx.lineTo(i * lineSpacing, canvasSize);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(0, i * lineSpacing);
+                ctx.lineTo(canvasSize, i * lineSpacing);
+                ctx.stroke();
+            }
+        };
+
+        const drawMarks = () => {
+            const { board } = gameStatus;
+            board.forEach((mark, index) => {
+                const row = Math.floor(index / boardSize);
+                const col = index % boardSize;
+                if (mark === 'X') {
+                    drawX(ctx, row, col, lineSpacing);
+                } else if (mark === 'O') {
+                    drawO(ctx, row, col, lineSpacing);
+                }
+            });
+        };
+
+        drawBoard();
+        drawMarks();
+
+    }, [gameStatus, boardSize]);
+
+    const createOrJoinGame = async () => {
+        if (!db || !userId) {
+            setError('User is not authenticated. Please wait a moment and try again.');
+            return;
+        }
+        if (!gameId) {
+            setError('Please enter a Game ID to create or join a game.');
+            return;
+        }
+        setError(null);
+        setNotification(null);
+
+        const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+        try {
+            const docSnap = await getDoc(gameRef);
+
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data.playerX && data.playerO) {
+                    setError('Game is already full. Please choose another ID.');
+                    return;
+                }
+
+                if (data.playerX === userId) {
+                    setNotification('Rejoined game as X');
+                    setGameData(data);
+                    setIsHost(true);
+                } else if (data.playerO === userId) {
+                    setNotification('Rejoined game as O');
+                    setGameData(data);
+                    setIsHost(false);
+                } else if (!data.playerO) {
+                    // Joining as Player O
+                    await updateDoc(gameRef, {
+                        playerO: userId,
+                    });
+                    setNotification('Joined game as O!');
+                    setIsHost(false);
+                } else {
+                    setError('Game is already full. Please choose another ID.');
+                }
+            } else {
+                // Creating a new game
+                await setDoc(gameRef, {
+                    board: Array(boardSize * boardSize).fill(null),
+                    xIsNext: true,
+                    winner: null,
                     playerX: userId,
                     playerO: null,
+                    currentPlayer: userId,
+                    boardSize: boardSize
                 });
-                setNotification("Game created! Waiting for Player O to join.");
+                setNotification('Game created! You are X. Waiting for opponent...');
+                setIsHost(true);
             }
-            setGameId(newGameId);
         } catch (err) {
-            console.error("Error creating/joining game:", err);
-            setError("Failed to create or join the game.");
+            console.error('Failed to create or join game:', err);
+            setError('Failed to create or join the game. Please check your network and try again.');
         }
     };
 
     const handleCanvasClick = async (event) => {
-        if (!isMyTurn || !db) return;
-
         const canvas = canvasRef.current;
+        if (!canvas || !gameData || gameStatus.winner || !isMyTurn) {
+            return;
+        }
+
         const rect = canvas.getBoundingClientRect();
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
-        const lineSpacing = canvas.width / gridSize;
+
+        const lineSpacing = canvasSize / boardSize;
         const col = Math.floor(x / lineSpacing);
         const row = Math.floor(y / lineSpacing);
+        const index = row * boardSize + col;
 
-        if (board[row][col]) return; // Cell already taken
+        const newBoard = [...gameStatus.board];
+        const mark = isHost ? 'X' : 'O';
 
-        const newBoard = board.map(arr => [...arr]);
-        newBoard[row][col] = playerSymbol;
+        if (newBoard[index] === null) {
+            newBoard[index] = mark;
+            const newWinner = checkWinner(newBoard, boardSize);
+            const newXIsNext = !gameStatus.xIsNext;
+            const newCurrentPlayer = newXIsNext ? gameData.playerX : gameData.playerO;
 
-        const newWinner = calculateWinner(newBoard, gridSize);
-        const newTurn = turn + 1;
-        const newIsDraw = !newWinner && newTurn > gridSize * gridSize;
-
-        const gameDocRef = doc(db, `/artifacts/${appId}/public/data/tictactoe/${gameId}`);
-        await updateDoc(gameDocRef, {
-            board: newBoard,
-            turn: newTurn,
-            winner: newWinner,
-            isDraw: newIsDraw,
-        });
+            const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+            try {
+                await updateDoc(gameRef, {
+                    board: newBoard,
+                    xIsNext: newXIsNext,
+                    winner: newWinner,
+                    currentPlayer: newCurrentPlayer,
+                });
+            } catch (err) {
+                console.error('Failed to update game:', err);
+                setError('Failed to make a move. Please try again.');
+            }
+        }
     };
 
     const handleGameReset = async (newSize) => {
-        if (!gameId || !db) return;
-        const newBoard = Array.from({ length: newSize }, () => Array(newSize).fill(null));
-        const gameDocRef = doc(db, `/artifacts/${appId}/public/data/tictactoe/${gameId}`);
-        await updateDoc(gameDocRef, {
-            board: newBoard,
-            gridSize: newSize,
-            turn: 1,
-            winner: null,
-            isDraw: false,
-        });
-    };
-
-    // --- Status Message Logic ---
-    const getStatusMessage = () => {
-        if (!gameState) return "Welcome to Tic-Tac-Toe!";
-        if (winner) {
-            return winner === playerSymbol ? `You win!` : `Player ${winner} wins!`;
+        if (!gameId || !isHost) {
+            setNotification('Only the game creator can reset the game.');
+            return;
         }
-        if (isDraw) return "It's a Draw!";
-        if (!playerO) return "Waiting for opponent to join...";
-        return isMyTurn ? `Your turn (${playerSymbol})` : `Opponent's turn (${playerSymbol === 'X' ? 'O' : 'X'})`;
+
+        const newBoard = Array(newSize * newSize).fill(null);
+        const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+
+        try {
+            await updateDoc(gameRef, {
+                board: newBoard,
+                boardSize: newSize,
+                xIsNext: true,
+                winner: null,
+                currentPlayer: gameData.playerX,
+            });
+            setBoardSize(newSize);
+            setNotification('Game has been reset.');
+        } catch (err) {
+            console.error('Failed to reset game:', err);
+            setError('Failed to reset the game.');
+        }
     };
-
-    // --- Main Render Logic ---
-    if (!isAuthReady) {
-        return <div className="flex justify-center items-center h-screen bg-gray-100 text-gray-700">Connecting...</div>;
-    }
-
-    if (!gameId) {
-        return (
-            <div className="min-h-screen bg-gray-100 flex flex-col justify-center items-center p-4 font-sans">
-                <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-8 text-center">
-                    <h1 className="text-4xl font-bold text-gray-800 mb-2">Online Tic-Tac-Toe</h1>
-                    <p className="text-gray-600 mb-6">Create a new game or join an existing one.</p>
-                    <div className="mb-4">
-                        <input
-                            type="text"
-                            value={gameIdInput}
-                            onChange={(e) => setGameIdInput(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleCreateOrJoinGame()}
-                            placeholder="Enter a Game ID"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
-                    </div>
-                    <button
-                        onClick={handleCreateOrJoinGame}
-                        className="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition duration-300 ease-in-out transform hover:scale-105 shadow-md"
-                    >
-                        Create / Join Game
-                    </button>
-                    {error && <p className="text-red-500 mt-4">{error}</p>}
-                    <div className="mt-6 text-sm text-gray-500">
-                        <p className="font-semibold">Your User ID:</p>
-                        <p className="break-all">{userId}</p>
-                    </div>
-                </div>
-            </div>
-        );
-    }
 
     return (
-        <div className="min-h-screen bg-gray-100 flex flex-col justify-center items-center p-4 font-sans text-center">
-            <div className="w-full max-w-lg bg-white rounded-xl shadow-lg p-6">
-                <h1 className="text-3xl font-bold text-gray-800 mb-2">Tic Tac Toe</h1>
-                <div className="text-sm text-gray-500 mb-4">
-                    <p>Game ID: <strong className="text-gray-700">{gameId}</strong></p>
-                    <p>Your Symbol: <strong className="text-2xl">{playerSymbol}</strong></p>
-                    {playerX && <p>Player X ID: <span className="break-all text-gray-700">{playerX}</span></p>}
-                    {playerO && <p>Player O ID: <span className="break-all text-gray-700">{playerO}</span></p>}
-                </div>
+        <div className="min-h-screen bg-gray-100 flex flex-col justify-center items-center p-4 font-sans">
+            <div className="w-full max-w-lg bg-white rounded-xl shadow-lg p-8 text-center">
+                <h1 className="text-4xl font-bold text-gray-800 mb-2">Online Tic-Tac-Toe</h1>
+                <p className="text-gray-600 mb-6">Create a new game or join an existing one.</p>
 
-                <div className="mb-4 space-x-2">
-                    <button onClick={() => handleGameReset(3)} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition">3x3</button>
-                    <button onClick={() => handleGameReset(4)} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition">4x4</button>
-                    <button onClick={() => handleGameReset(5)} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition">5x5</button>
-                </div>
+                {userId ? (
+                    <>
+                        <p className="text-sm text-gray-500 mb-2">Your User ID: {userId}</p>
+                        <div className="mb-4">
+                            <input
+                                type="text"
+                                value={gameId}
+                                onChange={(e) => setGameId(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && createOrJoinGame()}
+                                placeholder="Enter a Game ID"
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                        </div>
+                        <button
+                            onClick={createOrJoinGame}
+                            className="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition duration-300 ease-in-out transform hover:scale-105 shadow-md"
+                        >
+                            Create / Join Game
+                        </button>
+                    </>
+                ) : (
+                    <p className="text-red-500 text-lg mt-4 animate-pulse">Connecting to game service...</p>
+                )}
 
-                <h2 className="text-2xl font-semibold text-indigo-600 my-4 h-8">{getStatusMessage()}</h2>
-
-                <div className="relative">
-                    <canvas
-                        ref={canvasRef}
-                        width={canvasSize}
-                        height={canvasSize}
-                        className={`rounded-lg shadow-md transition-opacity duration-300 ${isMyTurn ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
-                        onClick={handleCanvasClick}
-                    />
-                    {!isMyTurn && <div className="absolute top-0 left-0 w-full h-full bg-gray-500 bg-opacity-10 rounded-lg"></div>}
-                </div>
-
-                {notification && <p className="text-green-600 mt-4">{notification}</p>}
                 {error && <p className="text-red-500 mt-4">{error}</p>}
+                {notification && <p className="text-green-600 mt-4">{notification}</p>}
+
+                {gameData && (
+                    <>
+                        <h2 className="text-2xl font-semibold text-gray-700 my-4">Game ID: {gameId}</h2>
+                        <div className="text-lg font-medium text-gray-600 mb-4 flex justify-center items-center space-x-4">
+                            <span className={`p-2 rounded-md ${gameData.playerX === userId ? 'bg-indigo-200' : 'bg-white'}`}>
+                                Player X: {gameData.playerX ? (gameData.playerX === userId ? 'You' : 'Opponent') : 'Waiting...'}
+                            </span>
+                            <span className="text-gray-400">vs</span>
+                            <span className={`p-2 rounded-md ${gameData.playerO === userId ? 'bg-indigo-200' : 'bg-white'}`}>
+                                Player O: {gameData.playerO ? (gameData.playerO === userId ? 'You' : 'Opponent') : 'Waiting...'}
+                            </span>
+                        </div>
+
+                        <div className="mb-4 space-x-2">
+                            <button onClick={() => handleGameReset(3)} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition">3x3</button>
+                            <button onClick={() => handleGameReset(4)} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition">4x4</button>
+                            <button onClick={() => handleGameReset(5)} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition">5x5</button>
+                        </div>
+
+                        <h2 className="text-2xl font-semibold text-indigo-600 my-4 h-8">{getStatusMessage(gameStatus.winner, isMyTurn, gameStatus.winner !== null || gameStatus.board.every(Boolean))}</h2>
+
+                        <div className="relative">
+                            <canvas
+                                ref={canvasRef}
+                                width={canvasSize}
+                                height={canvasSize}
+                                className={`rounded-lg shadow-md transition-opacity duration-300 ${isMyTurn ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
+                                onClick={handleCanvasClick}
+                            />
+                            {!isMyTurn && <div className="absolute top-0 left-0 w-full h-full bg-gray-500 bg-opacity-10 rounded-lg"></div>}
+                        </div>
+
+                    </>
+                )}
             </div>
         </div>
     );

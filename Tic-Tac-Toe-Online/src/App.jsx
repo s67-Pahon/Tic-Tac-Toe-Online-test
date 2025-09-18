@@ -1,17 +1,11 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp, deleteDoc } from 'firebase/firestore';
 
 // --- Global Variables Provided by the Environment ---
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {apiKey: "AIzaSyA-ezETUvJsjdcceG-3WpQK2NuXZQLGFmw",
-  authDomain: "tic-tac-toe-online-955d0.firebaseapp.com",
-  projectId: "tic-tac-toe-online-955d0",
-  storageBucket: "tic-tac-toe-online-955d0.firebasestorage.app",
-  messagingSenderId: "61466632785",
-  appId: "1:61466632785:web:e90047573f2c3bbf328e70",
-  measurementId: "G-8WECGZY7RW"};
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
 // --- Helper Functions (from original code) ---
@@ -237,31 +231,44 @@ export default function App() {
         try {
             const docSnap = await getDoc(gameRef);
 
-            if (docSnap.exists()) {
-                const data = docSnap.data();
+            // Check if the game is old and inactive
+            const isStale = docSnap.exists() && docSnap.data().lastUpdated &&
+                (new Date().getTime() - docSnap.data().lastUpdated.toDate().getTime()) > 24 * 60 * 60 * 1000;
+
+            if (isStale) {
+                // Delete the old game document to start a new one
+                await deleteDoc(gameRef);
+                setNotification('Old game room found and has been reset. Creating a new game...');
+                // Proceed to create a new game below
+            }
+
+            // Re-fetch the document to check if it's been deleted or never existed
+            const newDocSnap = await getDoc(gameRef);
+
+            if (newDocSnap.exists()) {
+                const data = newDocSnap.data();
                 if (data.playerX && data.playerO) {
                     setError('Game is already full. Please choose another ID.');
                     return;
                 }
 
                 if (data.playerX === userId) {
+                    await updateDoc(gameRef, { lastUpdated: serverTimestamp() });
                     setNotification('Rejoined game as X');
-                    setGameData(data);
                     setIsHost(true);
                 } else if (data.playerO === userId) {
+                    await updateDoc(gameRef, { lastUpdated: serverTimestamp() });
                     setNotification('Rejoined game as O');
-                    setGameData(data);
                     setIsHost(false);
                 } else if (!data.playerO) {
-                    await updateDoc(gameRef, {
-                        playerO: userId,
-                    });
+                    await updateDoc(gameRef, { playerO: userId, lastUpdated: serverTimestamp() });
                     setNotification('Joined game as O!');
                     setIsHost(false);
                 } else {
                     setError('Game is already full. Please choose another ID.');
                 }
             } else {
+                // Creating a new game
                 await setDoc(gameRef, {
                     board: Array(boardSize * boardSize).fill(null),
                     xIsNext: true,
@@ -269,7 +276,8 @@ export default function App() {
                     playerX: userId,
                     playerO: null,
                     currentPlayer: userId,
-                    boardSize: boardSize
+                    boardSize: boardSize,
+                    lastUpdated: serverTimestamp()
                 });
                 setNotification('Game created! You are X. Waiting for opponent...');
                 setIsHost(true);
@@ -317,6 +325,7 @@ export default function App() {
                     xIsNext: newXIsNext,
                     winner: newWinner,
                     currentPlayer: newCurrentPlayer,
+                    lastUpdated: serverTimestamp()
                 });
             } catch (err) {
                 console.error('Failed to update game:', err);
@@ -341,6 +350,7 @@ export default function App() {
                 xIsNext: true,
                 winner: null,
                 currentPlayer: gameData.playerX,
+                lastUpdated: serverTimestamp()
             });
             setBoardSize(newSize);
             setNotification('Game has been reset.');

@@ -14,7 +14,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 //
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-    apiKey: "AIzaSyA-ezETUvJsjdcceG-3WpQK2NuXZQLGFmw",
+     apiKey: "AIzaSyA-ezETUvJsjdcceG-3WpQK2NuXZQLGFmw",
   authDomain: "tic-tac-toe-online-955d0.firebaseapp.com",
   projectId: "tic-tac-toe-online-955d0",
   storageBucket: "tic-tac-toe-online-955d0.firebasestorage.app",
@@ -139,7 +139,7 @@ const GameComponent = ({ gameId, gameData, userId, functions, setNotification, s
 
         try {
             const makeMoveFunc = httpsCallable(functions, 'makeMove');
-            await makeMoveFunc({ gameId, index });
+            await makeMoveFunc({ gameId, index, userId });
         } catch (err) {
             console.error(err);
             setError(err.message);
@@ -153,7 +153,7 @@ const GameComponent = ({ gameId, gameData, userId, functions, setNotification, s
         }
         try {
             const resetGameFunc = httpsCallable(functions, 'resetGame');
-            await resetGameFunc({ gameId });
+            await resetGameFunc({ gameId, userId });
             setNotification("Game has been reset!");
         } catch (err) {
             console.error(err);
@@ -229,7 +229,6 @@ export default function App() {
     // --- Firebase Initialization & Auth ---
     useEffect(() => {
         try {
-            // Check if firebaseConfig has placeholder values
             if (firebaseConfig.apiKey.startsWith("YOUR_")) {
                 setError("Firebase config is not set. Please update App.jsx with your project details.");
                 return;
@@ -293,12 +292,16 @@ export default function App() {
 
     // --- Cloud Function Handlers ---
     const handleCreateGame = async () => {
-        if (!functions || !userId) return;
+        if (!functions || !userId) {
+            setError("Cannot create game: User ID is not available yet.");
+            return;
+        };
         setLoading(true);
         setError(null);
         try {
             const createGameFunc = httpsCallable(functions, 'createGame');
-            const result = await createGameFunc(); // No data needs to be sent
+            // FIX: Explicitly send the userId in the payload
+            const result = await createGameFunc({ userId: userId }); 
             setGameId(result.data.gameId);
         } catch (err) { setError(err.message); }
         setLoading(false);
@@ -310,7 +313,8 @@ export default function App() {
         setError(null);
         try {
             const joinGameFunc = httpsCallable(functions, 'joinGame');
-            await joinGameFunc({ gameId: inputGameId }); // Only send gameId
+            // FIX: Explicitly send the userId in the payload
+            await joinGameFunc({ gameId: inputGameId, userId: userId });
             setGameId(inputGameId);
         } catch (err) { setError(err.message); }
         setLoading(false);

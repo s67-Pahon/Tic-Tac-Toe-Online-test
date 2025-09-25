@@ -1,16 +1,32 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp, deleteDoc } from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
-// --- Global Variables Provided by the Environment ---
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+// --- Global Variables & Firebase Config ---
+//
+// !!!!!!!!!!!!!!!!!!!!!!!!!!! IMPORTANT !!!!!!!!!!!!!!!!!!!!!!!!!!!
+// YOU MUST REPLACE THESE PLACEHOLDER VALUES WITH YOUR ACTUAL
+// FIREBASE PROJECT CONFIGURATION. YOU CAN FIND THIS IN YOUR
+// FIREBASE CONSOLE > PROJECT SETTINGS > GENERAL > YOUR APPS.
+// THE APP WILL NOT WORK IF YOU DO NOT DO THIS.
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+    apiKey: "AIzaSyA-ezETUvJsjdcceG-3WpQK2NuXZQLGFmw",
+  authDomain: "tic-tac-toe-online-955d0.firebaseapp.com",
+  projectId: "tic-tac-toe-online-955d0",
+  storageBucket: "tic-tac-toe-online-955d0.firebasestorage.app",
+  messagingSenderId: "61466632785",
+  appId: "1:61466632785:web:e90047573f2c3bbf328e70",
+  measurementId: "G-8WECGZY7RW"
+};
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-// --- Helper Functions (from original code) ---
+// --- Helper Functions ---
 function drawX(ctx, row, col, lineSpacing) {
-    ctx.strokeStyle = '#2c3e50';
+    ctx.strokeStyle = '#38bdf8'; // Light Blue
     ctx.lineWidth = 8;
     const x = col * lineSpacing;
     const y = row * lineSpacing;
@@ -21,413 +37,320 @@ function drawX(ctx, row, col, lineSpacing) {
     ctx.moveTo(x + lineSpacing - padding, y + padding);
     ctx.lineTo(x + padding, y + lineSpacing - padding);
     ctx.stroke();
+    ctx.closePath();
 }
 
 function drawO(ctx, row, col, lineSpacing) {
-    ctx.strokeStyle = '#e74c3c';
+    ctx.strokeStyle = '#fb923c'; // Orange
     ctx.lineWidth = 8;
     ctx.beginPath();
     const x = col * lineSpacing + lineSpacing / 2;
     const y = row * lineSpacing + lineSpacing / 2;
     ctx.arc(x, y, lineSpacing / 2.5, 0, 2 * Math.PI);
     ctx.stroke();
+    ctx.closePath();
 }
 
-const checkWinner = (board, size) => {
-    const lines = [];
+// --- Child Components ---
 
-    // Rows and columns
-    for (let i = 0; i < size; i++) {
-        lines.push(board.slice(i * size, i * size + size)); // rows
-        lines.push(board.filter((_, idx) => idx % size === i)); // columns
-    }
+const Lobby = ({ handleCreateGame, handleJoinGame, inputGameId, setInputGameId, loading, disabled }) => (
+    <div className="space-y-4 animate-fade-in">
+        <button
+            onClick={handleCreateGame}
+            disabled={loading || disabled}
+            className="w-full bg-sky-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-sky-600 transition transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:scale-100"
+        >
+            {loading ? 'Creating...' : 'Create New Game'}
+        </button>
+        <div className="flex items-center space-x-2">
+            <hr className="flex-grow border-gray-600"/>
+            <span className="text-gray-500 font-bold">OR</span>
+            <hr className="flex-grow border-gray-600"/>
+        </div>
+        <div className="flex space-x-2">
+             <input
+                type="text"
+                value={inputGameId}
+                onChange={(e) => setInputGameId(e.target.value.trim())}
+                placeholder="Enter Game ID"
+                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 text-white"
+            />
+            <button
+                onClick={handleJoinGame}
+                disabled={loading || disabled || !inputGameId}
+                className="bg-emerald-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-emerald-600 transition transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:scale-100"
+            >
+                Join
+            </button>
+        </div>
+    </div>
+);
 
-    // Diagonals
-    lines.push(board.filter((_, idx) => idx % (size + 1) === 0));
-    lines.push(board.filter((_, idx) => idx > 0 && idx < (size * size) - 1 && idx % (size - 1) === 0));
-
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (line.every(val => val && val === line[0])) {
-            return line[0];
-        }
-    }
-
-    return null;
-};
-
-const getStatusMessage = (winner, isMyTurn, isGameOver, isHost) => {
-    const myMark = isHost ? 'X' : 'O';
-    const opponentMark = isHost ? 'O' : 'X';
-
-    if (isGameOver) {
-        return winner ? `${winner === myMark ? 'You' : 'Opponent'} Win!` : 'Game Draw!';
-    }
-    return isMyTurn ? `Your turn (${myMark})` : `Opponent's turn (${opponentMark})`;
-};
-
-// --- App Component ---
-export default function App() {
+const GameComponent = ({ gameId, gameData, userId, functions, setNotification, setError }) => {
     const canvasRef = useRef(null);
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [gameId, setGameId] = useState('');
-    const [isHost, setIsHost] = useState(false);
-    const [gameData, setGameData] = useState(null);
-    const [boardSize, setBoardSize] = useState(3);
-    const [gameStatus, setGameStatus] = useState({
-        board: Array(9).fill(null),
-        xIsNext: true,
-        winner: null,
-    });
-    const [error, setError] = useState(null);
-    const [notification, setNotification] = useState(null);
-    const isMyTurn = (gameData?.currentPlayer === userId);
     const canvasSize = 400;
-
-    useEffect(() => {
-        const initializeFirebase = async () => {
-            // FIX: Add check to prevent initialization if config is missing
-            if (Object.keys(firebaseConfig).length === 0) {
-                setError('Waiting for Firebase configuration to be provided...');
-                return;
-            }
-
-            try {
-                const app = initializeApp(firebaseConfig);
-                const firestore = getFirestore(app);
-                const authInstance = getAuth(app);
-                setDb(firestore);
-                setAuth(authInstance);
-
-                const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
-                    if (user) {
-                        setUserId(user.uid);
-                    } else {
-                        try {
-                            const anonymousUserCredential = await signInAnonymously(authInstance);
-                            setUserId(anonymousUserCredential.user.uid);
-                        } catch (error) {
-                            console.error('Anonymous sign-in failed:', error);
-                            setError('Could not connect to the game service anonymously.');
-                        }
-                    }
-                });
-
-                if (initialAuthToken) {
-                    try {
-                        await signInWithCustomToken(authInstance, initialAuthToken);
-                    } catch (error) {
-                        console.error('Custom token sign-in failed:', error);
-                    }
-                }
-
-                return () => unsubscribe();
-            } catch (err) {
-                console.error('Firebase initialization failed:', err);
-                setError('Could not initialize Firebase.');
-            }
-        };
-
-        initializeFirebase();
-    }, []);
-
-    useEffect(() => {
-        if (!db || !gameId || !userId) {
-            return;
-        }
-
-        const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-
-        const unsubscribe = onSnapshot(gameRef, (doc) => {
-            if (doc.exists()) {
-                const data = doc.data();
-                setGameData(data);
-                if (data.board) {
-                    setGameStatus({
-                        board: data.board,
-                        xIsNext: data.xIsNext,
-                        winner: checkWinner(data.board, data.boardSize),
-                    });
-                    setBoardSize(data.boardSize);
-                }
-            } else {
-                setGameData(null);
-                setGameStatus({
-                    board: Array(boardSize * boardSize).fill(null),
-                    xIsNext: true,
-                    winner: null,
-                });
-                setNotification('Game not found.');
-            }
-        }, (err) => {
-            console.error('Error fetching game data:', err);
-            setError('Failed to load game data.');
-        });
-
-        return () => unsubscribe();
-    }, [db, gameId, userId, appId]);
+    const boardSize = gameData?.board ? Math.sqrt(gameData.board.length) : 3;
+    const isHost = gameData?.playerX === userId;
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
-
+        if (!canvas || !gameData) return;
         const ctx = canvas.getContext('2d');
         const lineSpacing = canvasSize / boardSize;
 
-        const drawBoard = () => {
-            ctx.clearRect(0, 0, canvasSize, canvasSize);
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-            ctx.fillRect(0, 0, canvasSize, canvasSize);
-
-            ctx.strokeStyle = '#34495e';
-            ctx.lineWidth = 2;
-
-            for (let i = 1; i < boardSize; i++) {
-                ctx.beginPath();
-                ctx.moveTo(i * lineSpacing, 0);
-                ctx.lineTo(i * lineSpacing, canvasSize);
-                ctx.stroke();
-
-                ctx.beginPath();
-                ctx.moveTo(0, i * lineSpacing);
-                ctx.lineTo(canvasSize, i * lineSpacing);
-                ctx.stroke();
-            }
-        };
-
-        const drawMarks = () => {
-            const { board } = gameStatus;
-            board.forEach((mark, index) => {
-                const row = Math.floor(index / boardSize);
-                const col = index % boardSize;
-                if (mark === 'X') {
-                    drawX(ctx, row, col, lineSpacing);
-                } else if (mark === 'O') {
-                    drawO(ctx, row, col, lineSpacing);
-                }
-            });
-        };
-
-        drawBoard();
-        drawMarks();
-
-    }, [gameStatus, boardSize]);
-
-    const createOrJoinGame = async () => {
-        if (!db || !userId) {
-            setError('User is not authenticated. Please wait a moment and try again.');
-            return;
+        ctx.clearRect(0, 0, canvasSize, canvasSize);
+        ctx.strokeStyle = '#4b5563'; // Gray for grid
+        ctx.lineWidth = 4;
+        for (let i = 1; i < boardSize; i++) {
+            ctx.beginPath();
+            ctx.moveTo(i * lineSpacing, 0);
+            ctx.lineTo(i * lineSpacing, canvasSize);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, i * lineSpacing);
+            ctx.lineTo(canvasSize, i * lineSpacing);
+            ctx.stroke();
         }
-        if (!gameId) {
-            setError('Please enter a Game ID to create or join a game.');
-            return;
-        }
-        setError(null);
-        setNotification(null);
 
-        const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-        try {
-            const docSnap = await getDoc(gameRef);
-
-            // Check if the game is old and inactive
-            const isStale = docSnap.exists() && docSnap.data().lastUpdated &&
-                (new Date().getTime() - docSnap.data().lastUpdated.toDate().getTime()) > 24 * 60 * 60 * 1000;
-
-            if (isStale) {
-                // Delete the old game document to start a new one
-                await deleteDoc(gameRef);
-                setNotification('Old game room found and has been reset. Creating a new game...');
-                // Proceed to create a new game below
-            }
-
-            // Re-fetch the document to check if it's been deleted or never existed
-            const newDocSnap = await getDoc(gameRef);
-
-            if (newDocSnap.exists()) {
-                const data = newDocSnap.data();
-                if (data.playerX && data.playerO) {
-                    setError('Game is already full. Please choose another ID.');
-                    return;
-                }
-
-                if (data.playerX === userId) {
-                    await updateDoc(gameRef, { lastUpdated: serverTimestamp() });
-                    setNotification('Rejoined game as X');
-                    setIsHost(true);
-                } else if (data.playerO === userId) {
-                    await updateDoc(gameRef, { lastUpdated: serverTimestamp() });
-                    setNotification('Rejoined game as O');
-                    setIsHost(false);
-                } else if (!data.playerO) {
-                    await updateDoc(gameRef, { playerO: userId, lastUpdated: serverTimestamp() });
-                    setNotification('Joined game as O!');
-                    setIsHost(false);
-                } else {
-                    setError('Game is already full. Please choose another ID.');
-                }
-            } else {
-                // Creating a new game
-                await setDoc(gameRef, {
-                    board: Array(boardSize * boardSize).fill(null),
-                    xIsNext: true,
-                    winner: null,
-                    playerX: userId,
-                    playerO: null,
-                    currentPlayer: userId,
-                    boardSize: boardSize,
-                    lastUpdated: serverTimestamp()
-                });
-                setNotification('Game created! You are X. Waiting for opponent...');
-                setIsHost(true);
-            }
-        } catch (err) {
-            console.error('Failed to create or join game:', err);
-            setError('Failed to create or join the game. Please check your network and try again.');
-        }
-    };
+        gameData.board.forEach((mark, index) => {
+            const row = Math.floor(index / boardSize);
+            const col = index % boardSize;
+            if (mark === 'X') drawX(ctx, row, col, lineSpacing);
+            else if (mark === 'O') drawO(ctx, row, col, lineSpacing);
+        });
+    }, [gameData, boardSize]);
 
     const handleCanvasClick = async (event) => {
-        if (!gameData || !gameData.playerX || !gameData.playerO) {
-            console.error('Cannot make a move until both players have joined.');
-            setError('Waiting for opponent to join...');
-            return;
-        }
-
-        if (!canvasRef.current || gameStatus.winner || !isMyTurn) {
-            return;
-        }
+        if (!functions || gameData.status !== 'active') return;
+        const myTurn = (gameData.turn === 'X' && gameData.playerX === userId) ||
+                       (gameData.turn === 'O' && gameData.playerO === userId);
+        if (!myTurn) return;
 
         const canvas = canvasRef.current;
         const rect = canvas.getBoundingClientRect();
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
-
         const lineSpacing = canvasSize / boardSize;
         const col = Math.floor(x / lineSpacing);
         const row = Math.floor(y / lineSpacing);
         const index = row * boardSize + col;
 
-        const newBoard = [...gameStatus.board];
-        const mark = isHost ? 'X' : 'O';
-
-        if (newBoard[index] === null) {
-            newBoard[index] = mark;
-            const newWinner = checkWinner(newBoard, boardSize);
-            const newXIsNext = !gameStatus.xIsNext;
-            const newCurrentPlayer = newXIsNext ? gameData.playerX : gameData.playerO;
-
-            const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
-            try {
-                await updateDoc(gameRef, {
-                    board: newBoard,
-                    xIsNext: newXIsNext,
-                    winner: newWinner,
-                    currentPlayer: newCurrentPlayer,
-                    lastUpdated: serverTimestamp()
-                });
-            } catch (err) {
-                console.error('Failed to update game:', err);
-                setError('Failed to make a move. Please try again.');
-            }
-        }
-    };
-
-    const handleGameReset = async (newSize) => {
-        if (!gameId || !isHost) {
-            setNotification('Only the game creator can reset the game.');
-            return;
-        }
-
-        const newBoard = Array(newSize * newSize).fill(null);
-        const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', gameId);
+        if (gameData.board[index] !== null) return;
 
         try {
-            await updateDoc(gameRef, {
-                board: newBoard,
-                boardSize: newSize,
-                xIsNext: true,
-                winner: null,
-                currentPlayer: gameData.playerX,
-                lastUpdated: serverTimestamp()
-            });
-            setBoardSize(newSize);
-            setNotification('Game has been reset.');
+            const makeMoveFunc = httpsCallable(functions, 'makeMove');
+            await makeMoveFunc({ gameId, index });
         } catch (err) {
-            console.error('Failed to reset game:', err);
-            setError('Failed to reset the game.');
+            console.error(err);
+            setError(err.message);
+        }
+    };
+    
+    const handleResetGame = async () => {
+        if (!functions || !isHost) {
+            setNotification("Only the host (Player X) can reset the game.");
+            return;
+        }
+        try {
+            const resetGameFunc = httpsCallable(functions, 'resetGame');
+            await resetGameFunc({ gameId });
+            setNotification("Game has been reset!");
+        } catch (err) {
+            console.error(err);
+            setError(err.message);
         }
     };
 
+    const getStatusMessage = () => {
+        const myMark = isHost ? 'X' : 'O';
+        if (gameData.status === 'waiting') return 'Waiting for an opponent...';
+        if (gameData.status === 'finished') {
+            if (gameData.winner && gameData.winner !== 'draw') {
+                return gameData.winner === myMark ? "🎉 You Win! 🎉" : "😢 Opponent Wins! 😢";
+            }
+            return "🤝 It's a Draw! 🤝";
+        }
+        if (gameData.status === 'active') {
+            const isMyTurn = (gameData.turn === 'X' && isHost) || (gameData.turn === 'O' && !isHost);
+            return isMyTurn ? `Your Turn (${myMark})` : `Opponent's Turn (${gameData.turn})`;
+        }
+        return '';
+    };
+
+    const isMyTurn = gameData.status === 'active' && ((gameData.turn === 'X' && isHost) || (gameData.turn === 'O' && !isHost));
+
     return (
-        <div className="min-h-screen bg-gray-100 flex flex-col justify-center items-center p-4 font-sans">
-            <div className="w-full max-w-lg bg-white rounded-xl shadow-lg p-8 text-center">
-                <h1 className="text-4xl font-bold text-gray-800 mb-2">Online Tic-Tac-Toe</h1>
-                <p className="text-gray-600 mb-6">Create a new game or join an existing one.</p>
+        <div className="mt-6 animate-fade-in">
+            <div className="flex justify-between items-center bg-gray-700 p-2 rounded-lg mb-4">
+                <span className="text-sm font-semibold text-gray-300">Game ID: <span className="text-yellow-400">{gameId}</span></span>
+                <button 
+                    onClick={() => { navigator.clipboard.writeText(gameId); setNotification('Game ID Copied!'); }}
+                    className="text-xs bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-2 rounded-md transition"
+                >Copy ID</button>
+            </div>
 
-                {userId ? (
-                    <>
-                        <p className="text-sm text-gray-500 mb-2">Your User ID: {userId}</p>
-                        <div className="mb-4">
-                            <input
-                                type="text"
-                                value={gameId}
-                                onChange={(e) => setGameId(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && createOrJoinGame()}
-                                placeholder="Enter a Game ID"
-                                className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            />
-                        </div>
-                        <button
-                            onClick={createOrJoinGame}
-                            className="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition duration-300 ease-in-out transform hover:scale-105 shadow-md"
-                        >
-                            Create / Join Game
-                        </button>
-                    </>
-                ) : (
-                    <p className="text-red-500 text-lg mt-4 animate-pulse">Connecting to game service...</p>
-                )}
+            <div className="text-xl font-bold text-sky-400 my-4 h-8 transition-all">{getStatusMessage()}</div>
 
-                {error && <p className="text-red-500 mt-4">{error}</p>}
-                {notification && <p className="text-green-600 mt-4">{notification}</p>}
-
-                {gameData && (
-                    <>
-                        <h2 className="text-2xl font-semibold text-gray-700 my-4">Game ID: {gameId}</h2>
-                        <div className="text-lg font-medium text-gray-600 mb-4 flex justify-center items-center space-x-4">
-                            <span className={`p-2 rounded-md ${gameData.playerX === userId ? 'bg-indigo-200' : 'bg-white'}`}>
-                                Player X: {gameData.playerX ? (gameData.playerX === userId ? 'You' : 'Opponent') : 'Waiting...'}
-                            </span>
-                            <span className="text-gray-400">vs</span>
-                            <span className={`p-2 rounded-md ${gameData.playerO === userId ? 'bg-indigo-200' : 'bg-white'}`}>
-                                Player O: {gameData.playerO ? (gameData.playerO === userId ? 'You' : 'Opponent') : 'Waiting...'}
-                            </span>
-                        </div>
-
-                        <div className="mb-4 space-x-2">
-                            <button onClick={() => handleGameReset(3)} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition">3x3</button>
-                            <button onClick={() => handleGameReset(4)} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition">4x4</button>
-                            <button onClick={() => handleGameReset(5)} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition">5x5</button>
-                        </div>
-
-                        <h2 className="text-2xl font-semibold text-indigo-600 my-4 h-8">{getStatusMessage(gameStatus.winner, isMyTurn, gameStatus.winner !== null || gameStatus.board.every(Boolean), isHost)}</h2>
-
-                        <div className="relative">
-                            <canvas
-                                ref={canvasRef}
-                                width={canvasSize}
-                                height={canvasSize}
-                                className={`rounded-lg shadow-md transition-opacity duration-300 ${isMyTurn ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
-                                onClick={handleCanvasClick}
-                            />
-                            {!isMyTurn && <div className="absolute top-0 left-0 w-full h-full bg-gray-500 bg-opacity-10 rounded-lg"></div>}
-                        </div>
-
-                    </>
+            <div className="relative">
+                <canvas
+                    ref={canvasRef}
+                    width={canvasSize}
+                    height={canvasSize}
+                    className={`bg-gray-900/50 rounded-lg shadow-inner mx-auto transition-all duration-300 ${isMyTurn ? 'ring-2 ring-sky-400 ring-offset-4 ring-offset-gray-800' : 'opacity-70'}`}
+                    onClick={handleCanvasClick}
+                    style={{ cursor: isMyTurn ? 'pointer' : 'not-allowed' }}
+                />
+                 {gameData.status === 'finished' && (
+                    <div className="absolute inset-0 bg-black/60 flex flex-col justify-center items-center rounded-lg animate-fade-in">
+                         <div className="text-4xl font-extrabold text-white mb-6">{getStatusMessage().replace('🎉', '').replace('😢', '').replace('🤝', '')}</div>
+                         <div className="flex space-x-4">
+                            {isHost && <button onClick={handleResetGame} className="bg-sky-500 text-white font-bold py-2 px-5 rounded-lg hover:bg-sky-600 transition">Play Again</button>}
+                            <button onClick={() => window.location.reload()} className="bg-gray-600 text-white font-bold py-2 px-5 rounded-lg hover:bg-gray-700 transition">Leave Game</button>
+                         </div>
+                    </div>
                 )}
             </div>
         </div>
     );
+};
+
+// --- Main App Component ---
+export default function App() {
+    const [functions, setFunctions] = useState(null);
+    const [db, setDb] = useState(null);
+    const [userId, setUserId] = useState(null);
+    const [gameId, setGameId] = useState('');
+    const [gameData, setGameData] = useState(null);
+    const [inputGameId, setInputGameId] = useState('');
+    const [error, setError] = useState(null);
+    const [notification, setNotification] = useState('');
+    const [loading, setLoading] = useState(false);
+    
+    // --- Firebase Initialization & Auth ---
+    useEffect(() => {
+        try {
+            // Check if firebaseConfig has placeholder values
+            if (firebaseConfig.apiKey.startsWith("YOUR_")) {
+                setError("Firebase config is not set. Please update App.jsx with your project details.");
+                return;
+            }
+
+            const app = initializeApp(firebaseConfig);
+            const authInstance = getAuth(app);
+            const functionsInstance = getFunctions(app);
+            const dbInstance = getFirestore(app);
+            
+            setFunctions(functionsInstance);
+            setDb(dbInstance);
+
+            onAuthStateChanged(authInstance, async (user) => {
+                if (user) {
+                    setUserId(user.uid);
+                } else if (initialAuthToken) {
+                    try { await signInWithCustomToken(authInstance, initialAuthToken); }
+                    catch (e) { await signInAnonymously(authInstance); }
+                } else {
+                    await signInAnonymously(authInstance);
+                }
+            });
+        } catch (err) {
+            setError('Could not initialize Firebase.');
+            console.error(err);
+        }
+    }, []);
+    
+    // --- Real-time Game Data Listener ---
+    useEffect(() => {
+        if (!gameId || !db) {
+            setGameData(null);
+            return;
+        }
+        
+        const gameRef = doc(db, 'games', gameId);
+        const unsubscribe = onSnapshot(gameRef, (doc) => {
+            if (doc.exists()) {
+                setGameData(doc.data());
+                setError(null);
+            } else {
+                setNotification('Game not found or has been deleted.');
+                setGameData(null);
+                setGameId('');
+            }
+        }, (err) => {
+            setError('Failed to load game data.');
+        });
+        return () => unsubscribe();
+    }, [gameId, db]);
+
+    // --- Notification timeout ---
+    useEffect(() => {
+        if(notification) {
+            const timer = setTimeout(() => setNotification(''), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [notification])
+
+
+    // --- Cloud Function Handlers ---
+    const handleCreateGame = async () => {
+        if (!functions || !userId) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const createGameFunc = httpsCallable(functions, 'createGame');
+            const result = await createGameFunc(); // No data needs to be sent
+            setGameId(result.data.gameId);
+        } catch (err) { setError(err.message); }
+        setLoading(false);
+    };
+
+    const handleJoinGame = async () => {
+        if (!functions || !userId || !inputGameId) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const joinGameFunc = httpsCallable(functions, 'joinGame');
+            await joinGameFunc({ gameId: inputGameId }); // Only send gameId
+            setGameId(inputGameId);
+        } catch (err) { setError(err.message); }
+        setLoading(false);
+    };
+
+    return (
+        <div className="min-h-screen bg-gray-900 text-white flex flex-col justify-center items-center p-4 font-sans antialiased">
+            <div className="w-full max-w-sm bg-gray-800 rounded-2xl shadow-2xl p-6 text-center">
+                <h1 className="text-4xl font-bold text-white mb-2">Tic-Tac-Toe</h1>
+                <p className="text-gray-400 mb-6">Built with Firebase</p>
+                
+                {(!userId) ? <div className="text-yellow-400 animate-pulse mb-4">Connecting...</div> : (
+                    !gameId ? (
+                        <Lobby 
+                            handleCreateGame={handleCreateGame}
+                            handleJoinGame={handleJoinGame}
+                            inputGameId={inputGameId}
+                            setInputGameId={setInputGameId}
+                            loading={loading}
+                            disabled={!userId}
+                        />
+                    ) : gameData ? (
+                        <GameComponent 
+                            gameId={gameId}
+                            gameData={gameData}
+                            userId={userId}
+                            functions={functions}
+                            setNotification={setNotification}
+                            setError={setError}
+                        />
+                    ) : (
+                        <div className="text-sky-400 animate-pulse my-8">Loading Game...</div>
+                    )
+                )}
+
+                 {error && <p className="text-red-400 mt-4 text-sm bg-red-900/50 p-2 rounded-md">{error}</p>}
+                 {notification && <p className="text-green-400 mt-4 text-sm bg-green-900/50 p-2 rounded-md">{notification}</p>}
+            </div>
+             <footer className="text-xs text-gray-600 mt-4">Your User ID: {userId || '...'}</footer>
+        </div>
+    );
 }
+
